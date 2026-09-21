@@ -1,0 +1,156 @@
+/* 
+
+A library for working with files in dropbox. Will be part of gleekit.
+For now this just goes straight to dropbox. Will add caching later.
+
+Use like so:
+
+const db = getDb({});
+
+export const db = adapter.file<Data>({
+  path: "junk/main.json",
+  default: () => ({ locations: [] }),
+});
+
+
+Or for multiple files:
+
+export const dbx = {
+  day: db.fileSet<Date, DayData>({
+    path: (key) => `${toISODate(key)}.json`,
+    default: () => ({ entries: {} }),
+  }),
+  targets: db.file<UserTargets>({
+    path: "targets.json",
+    default: () => ({ targets: [] }),
+  })
+}
+
+
+*/
+import { getJsonDbx, getRawDbx, putJsonDbx, gleekit } from "gleekit";
+
+interface FileOptions<Shape> {
+  path: string;
+  default: () => Shape;
+  parse?: (raw: string) => Shape;
+  serialise?: (raw: Shape) => string;
+}
+
+interface FileSetOptions<Key, Shape> {
+  path: (key: Key) => string;
+  default: (key?: Key) => Shape;
+  parse?: (raw: string) => Shape;
+  serialise?: (raw: Shape) => string;
+}
+const parseJson = (raw) => JSON.parse(raw);
+const serialiseJson = (raw) => JSON.stringify(raw);
+
+interface FileDbOptions {
+  dbName?: string;
+}
+class FileSet<Key, Shape> {
+  db: FileDb;
+  path: (key: Key) => string;
+  parse: (raw: string) => Shape;
+  default: (key?: Key) => Shape;
+  serialise: (raw: Shape) => string;
+  constructor(db: FileDb, opts: FileSetOptions<Key, Shape>) {
+    this.db = db;
+    this.path = opts.path;
+    this.parse = opts.parse || parseJson;
+    this.serialise = opts.serialise || serialiseJson;
+    this.default = opts.default;
+  }
+  async get(key: Key): Promise<Shape> {
+    // What happens on 409?
+    const raw = await getRawDbx(this.path(key));
+    return raw.ok ? raw.json() : this.default();
+  }
+  put(key: Key, value: Shape) {
+    return this.db.put(this.path(key), value);
+  }
+}
+
+// TODO: sort this mess, its' half JSON half not.
+export class File<Shape> {
+  db: FileDb;
+  path: string;
+  parse: (raw: string) => Shape;
+  default: () => Shape;
+  serialise: (raw: Shape) => string;
+  constructor(db: FileDb, opts: FileOptions<Shape>) {
+    this.db = db;
+    this.path = opts.path;
+    this.parse = opts.parse || parseJson;
+    this.serialise = opts.serialise || serialiseJson;
+    this.default = opts.default;
+  }
+  async get(): Promise<Shape> {
+    // Need to carry raw response to point of usage.
+    const raw = await getRawDbx(this.path);
+    return raw.ok ? raw.json() : this.default();
+  }
+  async put(value: Shape) {
+    return putJsonDbx(this.path, value);
+    // return this.db.put(this.path, value);
+  }
+}
+
+class Delayer {
+  delay: number;
+  queue: Record<string, any>;
+  timeout: any;
+  constructor() {
+    this.queue = {};
+    this.delay = 3000;
+  }
+  flush() {
+    // could something be added while it it doing this?
+    for (const path in this.queue) {
+      putJsonDbx(path, this.queue[path]);
+      delete this.queue[path];
+    }
+  }
+  push(path: string, value: any) {
+    this.queue[path] = value;
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+    }
+    this.timeout = setTimeout(() => this.flush(), this.delay);
+  }
+}
+
+class FileDb {
+  delayer: Delayer;
+  // pass dbAdapter, apiAdapter, uiAdapter
+  constructor(options: FileDbOptions) {
+    this.delayer = new Delayer();
+  }
+  fileSet<Key, Shape>(opts: FileSetOptions<Key, Shape>) {
+    return new FileSet(this, opts);
+  }
+  file<Shape>(opts: FileOptions<Shape>) {
+    return new File(this, opts);
+  }
+  /**
+   * Gets a file from IndexedDb, else from Dropbox.
+   */
+  get() {}
+  /**
+   * Puts a file to IndexedDb, and adds operation to batch.
+   */
+  put(path, value) {
+    this.delayer.push(path, value);
+  }
+  /**
+   * Deletes a file from IndexedDb, and adds operation to batch.
+   */
+  delete() {}
+  /**
+   * Synchronises local changes to Dropbox.
+   */
+  flush() {}
+}
+
+export const getDb = (options: FileDbOptions) => new FileDb(options);
