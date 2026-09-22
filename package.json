@@ -11,7 +11,7 @@
   "gleekit": {
     "name": "Junk",
     "build": {
-      "default": {
+      "main": {
         "head": [
           {
             "type": "link",
