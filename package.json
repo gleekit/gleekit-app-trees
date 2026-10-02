@@ -8,31 +8,6 @@
     "compile": "babel $@",
     "start": "webpack serve"
   },
-  "gleekit": {
-    "name": "Junk",
-    "build": {
-      "main": {
-        "head": [
-          {
-            "type": "link",
-            "url": "dist/styles.css",
-            "dev": "src/styles.css"
-          },
-          {
-            "type": "link",
-            "url": "https://maxst.icons8.com/vue-static/landings/line-awesome/line-awesome/1.3.0/css/line-awesome.min.css"
-          }
-        ],
-        "body": [
-          {
-            "type": "script",
-            "url": "dist/index.js",
-            "dev": "src/index.tsx"
-          }
-        ]
-      }
-    }
-  },
   "author": "",
   "license": "ISC",
   "devDependencies": {
